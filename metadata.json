@@ -1,0 +1,6 @@
+{
+  "name": "Magic Eye Studio",
+  "description": "مولد تصویر سه‌بعدی (استریوگرام) با قابلیت نقاشی دستی نقشه عمق، اشکال سه‌بعدی، الگوهای پس‌زمینه متنوع و گالری تاریخچه",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

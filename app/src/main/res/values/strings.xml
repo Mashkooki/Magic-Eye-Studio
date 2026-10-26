@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">Magic Eye Studio</string>
+    <string name="header_title">مولد تصویر سه‌بعدی (Magic Eye)</string>
+    <string name="header_subtitle">یک شکل یا متن انتخاب کن، الگو را تعیین کن و دکمهٔ «بساز» را بزن.</string>
+    <string name="tab_studio">استودیو ساخت</string>
+    <string name="tab_history">تاریخچه و گالری</string>
+    <string name="tab_guide">راهنمای دید</string>
+    <string name="section_depth_shape">شکل پنهان (نقشهٔ عمق)</string>
+    <string name="section_pattern">الگوی پس‌زمینه</string>
+    <string name="section_parameters">تنظیمات ابعاد و عمق</string>
+    <string name="label_invert_depth">برعکس‌کردن عمق (فرورفته به‌جای برجسته)</string>
+    <string name="label_guide_dots">نمایش نقاط راهنمای دید در بالای تصویر</string>
+    <string name="param_width">عرض</string>
+    <string name="param_height">ارتفاع</string>
+    <string name="param_strip_width">عرض نوار پایه</string>
+    <string name="param_depth_intensity">شدت عمق</string>
+    <string name="param_edge_blur">نرمی لبه‌ها</string>
+    <string name="btn_generate">بساز</string>
+    <string name="btn_save_gallery">ذخیره در گالری</string>
+    <string name="btn_download_file">دانلود PNG</string>
+    <string name="btn_share">اشتراک‌گذاری</string>
+    <string name="btn_save_history">ذخیره در تاریخچه</string>
+    <string name="btn_upload_depth">آپلود تصویر نقشهٔ عمق</string>
+    <string name="btn_upload_pattern">آپلود تصویر الگو</string>
+    <string name="btn_fullscreen">نمایش تمام‌صفحه و زوم</string>
+    <string name="btn_peek_depth">نمایش نقشهٔ عمق</string>
+    <string name="btn_show_stereogram">نمایش استریوگرام</string>
+    <string name="btn_clear_canvas">پاک‌کردن بوم</string>
+    <string name="tip_viewing_method">روش دیدن: صفحه را کمی دور کن، به نقطه‌های بالای تصویر نگاه کن و چشم‌ها را طوری شُل کن که انگار از آن‌ها عبور می‌کنی تا دو نقطه به سه تا و بعد دو تا تبدیل شود. چند ثانیه صبر کن.</string>
+    <string name="tip_upload_help">می‌توانید تصویر دلخواه خود را برای نقشهٔ عمق (سفید = نزدیک، سیاه = دور) یا الگوی پس‌زمینه مستقیماً از گالری انتخاب کنید.</string>
+    <string name="empty_history_title">هنوز تصویری در تاریخچه ذخیره نشده است</string>
+    <string name="empty_history_subtitle">در تب استودیو ساخت، تصویر سه‌بعدی خود را بسازید و دکمهٔ «ذخیره در تاریخچه» یا «ذخیره در گالری» را بزنید.</string>
+</resources>

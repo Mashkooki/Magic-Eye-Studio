@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مولد تصویر سه‌بعدی (استریوگرام)</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1c1b19;--mut:#6b675f;--ac:#b4442c;--bd:#ddd8cc}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171614;--card:#222120;--tx:#eeeae0;--mut:#9d988c;--ac:#e8745a;--bd:#38362f}}
+:root{color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:Vazirmatn,Tahoma,"Segoe UI",sans-serif;line-height:1.7}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:8px 0 4px}
+p.sub{color:var(--mut);margin:0 0 16px;font-size:.92rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:620px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:.88rem;color:var(--mut);margin-bottom:2px}
+select,input[type=text],input[type=file]{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+input[type=range]{width:100%;accent-color:var(--ac)}
+.row{display:flex;justify-content:space-between;font-size:.88rem}
+.row b{color:var(--tx)}
+button{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;cursor:pointer;margin-left:8px}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.out{overflow-x:auto;text-align:center}
+canvas{max-width:100%;height:auto;border-radius:8px;background:#000}
+#dprev{width:100%;max-width:200px;margin-top:6px}
+.tip{font-size:.85rem;color:var(--mut)}
+.chk{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>مولد تصویر سه‌بعدی (Magic Eye)</h1>
+<p class="sub">یک شکل یا متن انتخاب کن، الگو را تعیین کن و دکمهٔ «بساز» را بزن.</p>
+
+<div class="card grid">
+<div>
+<label>شکل پنهان (نقشهٔ عمق)</label>
+<select id="shape">
+<option value="text">متن</option>
+<option value="circle">دایره</option>
+<option value="star">ستاره</option>
+<option value="heart">قلب</option>
+<option value="upload">آپلود نقشهٔ عمق (سفید = نزدیک)</option>
+</select>
+<input type="text" id="txt" value="داوود" style="margin-top:6px">
+<input type="file" id="dfile" accept="image/*" style="margin-top:6px;display:none">
+<canvas id="dprev" width="200" height="130"></canvas>
+</div>
+<div>
+<label>الگوی پس‌زمینه</label>
+<select id="pat">
+<option value="rand">نقطه‌های رنگی تصادفی</option>
+<option value="mono">نقطه‌های سیاه‌وسفید</option>
+<option value="upload">آپلود تصویر دلخواه (مثلاً نقاشی چشم‌ها)</option>
+</select>
+<input type="file" id="pfile" accept="image/*" style="margin-top:6px;display:none">
+<div class="chk"><input type="checkbox" id="inv"><label for="inv" style="margin:0">برعکس‌کردن عمق (فرورفته به‌جای برجسته)</label></div>
+</div>
+</div>
+
+<div class="card grid">
+<div><div class="row"><span>عرض</span><b id="vW">1000</b></div><input type="range" id="W" min="400" max="1600" step="50" value="1000"></div>
+<div><div class="row"><span>ارتفاع</span><b id="vH">650</b></div><input type="range" id="H" min="300" max="1200" step="50" value="650"></div>
+<div><div class="row"><span>عرض نوار پایه</span><b id="vS">140</b></div><input type="range" id="S" min="60" max="300" step="2" value="140"></div>
+<div><div class="row"><span>شدت عمق</span><b id="vM">30</b></div><input type="range" id="M" min="4" max="70" value="30"></div>
+<div><div class="row"><span>نرمی لبه‌ها</span><b id="vB">4</b></div><input type="range" id="B" min="0" max="12" value="4"></div>
+</div>
+
+<div class="card">
+<button id="go">بساز</button>
+<button id="dl" class="sec">دانلود PNG</button>
+<p class="tip">اگر دکمهٔ آپلود کار نکرد: تصویر را روی صفحه بکش و رها کن یا با Ctrl+V بچسبان (برای نقشهٔ عمق یا الگو، بسته به گزینهٔ انتخاب‌شده).</p>
+<p class="tip">روش دیدن: صفحه را کمی دور کن، به نقطه‌های بالای تصویر نگاه کن و چشم‌ها را طوری شُل کن که انگار از آن‌ها عبور می‌کنی تا دو نقطه به سه تا و بعد دو تا تبدیل شود. چند ثانیه صبر کن.</p>
+</div>
+
+<div class="card out"><canvas id="cv" width="1000" height="650"></canvas></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+let dImg=null,pImg=null;
+
+['W','H','S','M','B'].forEach(k=>{
+  const el=$(k),v=$('v'+k);
+  el.addEventListener('input',()=>{v.textContent=el.value;if(k!=='M'&&k!=='S')preview();});
+});
+$('shape').onchange=()=>{
+  $('txt').style.display=$('shape').value==='text'?'':'none';
+  $('dfile').style.display=$('shape').value==='upload'?'':'none';
+  preview();
+};
+$('pat').onchange=()=>{$('pfile').style.display=$('pat').value==='upload'?'':'none';};
+$('txt').oninput=preview;
+function loadFile(inp,cb){
+  const f=inp.files[0];if(!f)return;
+  const im=new Image();im.onload=()=>cb(im);im.src=URL.createObjectURL(f);
+}
+$('dfile').onchange=()=>loadFile($('dfile'),im=>{dImg=im;preview();});
+$('pfile').onchange=()=>loadFile($('pfile'),im=>{pImg=im;});
+
+function starPath(c,cx,cy,R,r,n){
+  c.beginPath();
+  for(let i=0;i<n*2;i++){
+    const a=Math.PI*i/n-Math.PI/2,rad=i%2?r:R;
+    c[i?'lineTo':'moveTo'](cx+Math.cos(a)*rad,cy+Math.sin(a)*rad);
+  }
+  c.closePath();
+}
+function drawShape(c,W,H){
+  c.fillStyle='#000';c.fillRect(0,0,W,H);
+  c.fillStyle='#fff';
+  const t=$('shape').value,cx=W/2,cy=H/2,m=Math.min(W,H);
+  if(t==='text'){
+    const s=$('txt').value||' ';
+    let fs=H*0.5;
+    c.textAlign='center';c.textBaseline='middle';
+    c.font='bold '+fs+'px Vazirmatn,Tahoma,Arial,sans-serif';
+    const w=c.measureText(s).width;
+    if(w>W*0.8){fs*=W*0.8/w;c.font='bold '+fs+'px Vazirmatn,Tahoma,Arial,sans-serif';}
+    c.direction='rtl';c.fillText(s,cx,cy);
+  }else if(t==='circle'){
+    c.beginPath();c.arc(cx,cy,m*0.32,0,7);c.fill();
+  }else if(t==='star'){
+    starPath(c,cx,cy+m*0.03,m*0.4,m*0.17,5);c.fill();
+  }else if(t==='heart'){
+    const s=m*0.016;c.save();c.translate(cx,cy-m*0.05);c.scale(s,s);
+    c.beginPath();
+    for(let a=0;a<6.3;a+=0.02){
+      const x=16*Math.pow(Math.sin(a),3),y=-(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));
+      c[a?'lineTo':'moveTo'](x,y);
+    }
+    c.fill();c.restore();
+  }else if(t==='upload'&&dImg){
+    const k=Math.min(W/dImg.width,H/dImg.height);
+    c.drawImage(dImg,(W-dImg.width*k)/2,(H-dImg.height*k)/2,dImg.width*k,dImg.height*k);
+  }
+}
+function boxBlur(d,W,H,r){
+  if(r<1)return d;
+  const t=new Float32Array(d.length);
+  for(let pass=0;pass<2;pass++){
+    for(let y=0;y<H;y++){let s=0,o=y*W;
+      for(let x=-r;x<=r;x++)s+=d[o+Math.min(W-1,Math.max(0,x))];
+      for(let x=0;x<W;x++){t[o+x]=s/(2*r+1);
+        s+=d[o+Math.min(W-1,x+r+1)]-d[o+Math.max(0,x-r)];}
+    }
+    for(let x=0;x<W;x++){let s=0;
+      for(let y=-r;y<=r;y++)s+=t[Math.min(H-1,Math.max(0,y))*W+x];
+      for(let y=0;y<H;y++){d[y*W+x]=s/(2*r+1);
+        s+=t[Math.min(H-1,y+r+1)*W+x]-t[Math.max(0,y-r)*W+x];}
+    }
+  }
+  return d;
+}
+function getDepth(W,H){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d');drawShape(x,W,H);
+  const id=x.getImageData(0,0,W,H).data,d=new Float32Array(W*H);
+  for(let i=0;i<d.length;i++)d[i]=id[i*4]/255;
+  return boxBlur(d,W,H,+$('B').value);
+}
+function preview(){
+  const p=$('dprev'),x=p.getContext('2d');
+  const s=document.createElement('canvas');s.width=+$('W').value;s.height=+$('H').value;
+  drawShape(s.getContext('2d'),s.width,s.height);
+  x.drawImage(s,0,0,p.width,p.height);
+}
+function makeTile(S){
+  const c=document.createElement('canvas');c.width=S;c.height=S;
+  const x=c.getContext('2d'),img=x.createImageData(S,S),p=img.data,mode=$('pat').value;
+  if(mode==='upload'&&pImg){x.drawImage(pImg,0,0,S,S);return x.getImageData(0,0,S,S).data;}
+  for(let i=0;i<S*S;i++){
+    if(mode==='mono'){const v=Math.random()<0.5?0:255;p[i*4]=p[i*4+1]=p[i*4+2]=v;}
+    else{p[i*4]=Math.random()*256;p[i*4+1]=Math.random()*256;p[i*4+2]=Math.random()*256;}
+    p[i*4+3]=255;
+  }
+  return p;
+}
+function generate(){
+  const W=+$('W').value,H=+$('H').value,S=+$('S').value,M=Math.min(+$('M').value,S-2);
+  const inv=$('inv').checked;
+  cv.width=W;cv.height=H;
+  const d=getDepth(W,H),tile=makeTile(S);
+  const img=ctx.createImageData(W,H),o=img.data;
+  for(let y=0;y<H;y++){
+    const ty=(y%S)*S;
+    for(let x=0;x<W;x++){
+      const i=(y*W+x)*4;
+      if(x<S){
+        const t=(ty+x)*4;
+        o[i]=tile[t];o[i+1]=tile[t+1];o[i+2]=tile[t+2];
+      }else{
+        let v=d[y*W+x];if(inv)v=1-v;
+        const src=(y*W+x-S+Math.round(v*M))*4;
+        o[i]=o[src];o[i+1]=o[src+1];o[i+2]=o[src+2];
+      }
+      o[i+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  // نقاط راهنما
+  ctx.fillStyle='#fff';ctx.strokeStyle='#000';ctx.lineWidth=2;
+  [W/2-S/2,W/2+S/2].forEach(px=>{ctx.beginPath();ctx.arc(px,22,8,0,7);ctx.fill();ctx.stroke();});
+}
+$('go').onclick=generate;
+$('dl').onclick=()=>{
+  cv.toBlob(async blob=>{
+    let dls=null;
+    try{dls=window.claude&&await window.claude.use('downloads');}catch(e){}
+    if(dls){
+      try{await dls.save({filename:'stereogram.png',data:blob});}
+      catch(e){if(e&&e.code!=='declined')alert('ذخیره ممکن نشد: '+(e.code||e));}
+    }else{
+      const a=document.createElement('a');a.download='stereogram.png';
+      a.href=URL.createObjectURL(blob);a.click();
+    }
+  },'image/png');
+};
+// کشیدن و رها کردن / چسباندن تصویر
+function fileToImg(f,cb){if(!f||!f.type.startsWith('image/'))return;const im=new Image();im.onload=()=>cb(im);im.src=URL.createObjectURL(f);}
+function target(){return $('shape').value==='upload'?'d':($('pat').value==='upload'?'p':null);}
+function receive(f){
+  fileToImg(f,im=>{
+    const t=target();
+    if(t==='p'){pImg=im;}
+    else{dImg=im;if($('shape').value!=='upload'){$('shape').value='upload';$('shape').onchange();}preview();}
+  });
+}
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{e.preventDefault();receive(e.dataTransfer.files[0]);});
+addEventListener('paste',e=>{const it=[...(e.clipboardData?e.clipboardData.items:[])].find(i=>i.type.startsWith('image/'));if(it)receive(it.getAsFile());});
+$('dfile').style.display='none';$('pfile').style.display='none';
+preview();generate();
+</script>
+</body>
+</html>
