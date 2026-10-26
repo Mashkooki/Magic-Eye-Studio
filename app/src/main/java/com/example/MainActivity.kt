@@ -63,6 +63,7 @@ import com.example.ui.GuideScreen
 import com.example.ui.HistoryScreen
 import com.example.ui.StereogramViewModel
 import com.example.ui.StudioScreen
+import com.example.ui.components.FullscreenStereogramDialog
 import com.example.ui.theme.MyApplicationTheme
 
 enum class AppSection(val route: String) {
@@ -96,6 +97,9 @@ class MainActivity : ComponentActivity() {
                         HistoryScreen(
                             historyItems = historyItems,
                             onBackToStudio = onSwitchToStudio,
+                            onOpenInFullscreen = { title, stereoBmp, depthBmp ->
+                                viewModel.openCustomInFullscreen(title, stereoBmp, depthBmp)
+                            },
                             onLoadIntoStudio = { item ->
                                 viewModel.loadFromHistory(item, onLoaded = onSwitchToStudio)
                             },
@@ -128,7 +132,6 @@ fun MagicEyeApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var currentSection by rememberSaveable { mutableStateOf(AppSection.STUDIO) }
 
-    // Zero-permission Photo Picker for Depth Map image upload
     val depthPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -137,7 +140,6 @@ fun MagicEyeApp(
         }
     }
 
-    // Zero-permission Photo Picker for Pattern image upload
     val patternPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -146,7 +148,6 @@ fun MagicEyeApp(
         }
     }
 
-    // Storage Access Framework (SAF) CreateDocument for direct PNG file download
     val downloadPngLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("image/png")
     ) { uri ->
@@ -161,6 +162,30 @@ fun MagicEyeApp(
             snackbarHostState.showSnackbar(msg)
             viewModel.clearStatusMessage()
         }
+    }
+
+    // If a Fullscreen Viewer item is active, render it directly in the Activity window (no broken Dialog window!)
+    val fullscreenData = uiState.fullscreenData
+    if (fullscreenData != null) {
+        FullscreenStereogramDialog(
+            title = fullscreenData.title,
+            stereogramBitmap = fullscreenData.stereogramBitmap,
+            depthBitmap = fullscreenData.depthBitmap,
+            startWithDepth = fullscreenData.startWithDepth,
+            onDismiss = viewModel::closeFullscreen,
+            onSaveToGallery = { viewModel.saveBitmapToGallery(fullscreenData.stereogramBitmap) },
+            onDownloadFile = {
+                downloadPngLauncher.launch("stereogram_${System.currentTimeMillis()}.png")
+            },
+            onShare = {
+                viewModel.shareBitmap(fullscreenData.stereogramBitmap, fullscreenData.title) { shareIntent ->
+                    context.startActivity(
+                        Intent.createChooser(shareIntent, "اشتراک‌گذاری تصویر سه‌بعدی")
+                    )
+                }
+            }
+        )
+        return
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -327,7 +352,8 @@ fun MagicEyeApp(
                                 }
                             },
                             onSaveHistoryClick = viewModel::saveCurrentToHistory,
-                            onTogglePeekDepth = viewModel::togglePeekDepth,
+                            onPreviewModeChanged = viewModel::setPreviewMode,
+                            onOpenFullscreenClick = viewModel::openCurrentInFullscreen,
                             modifier = Modifier.weight(1f)
                         )
                     }

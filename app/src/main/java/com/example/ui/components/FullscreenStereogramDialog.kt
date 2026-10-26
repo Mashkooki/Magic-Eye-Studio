@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -21,22 +23,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.SaveAlt
-import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomInMap
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +53,8 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,10 +76,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private fun Context.findActivity(): Activity? {
     var ctx = this
@@ -80,13 +90,20 @@ private fun Context.findActivity(): Activity? {
     return null
 }
 
+private fun Bitmap.rotateBitmap90(): Bitmap {
+    val matrix = Matrix().apply { postRotate(90f) }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+}
+
 @Composable
 fun FullscreenStereogramDialog(
     title: String,
     stereogramBitmap: Bitmap,
     depthBitmap: Bitmap?,
+    startWithDepth: Boolean = false,
     onDismiss: () -> Unit,
     onSaveToGallery: () -> Unit,
+    onDownloadFile: (() -> Unit)? = null,
     onShare: () -> Unit
 ) {
     val context = LocalContext.current
@@ -94,84 +111,363 @@ fun FullscreenStereogramDialog(
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    var showDepthOverlay by remember { mutableStateOf(false) }
-    var isFullBleedZoomed by remember { mutableStateOf(false) }
-    var isLandscapeLocked by remember { mutableStateOf(false) }
-    var controlsVisible by remember { mutableStateOf(true) }
-    var savedFeedbackVisible by remember { mutableStateOf(false) }
+    var showDepthOverlay by remember { mutableStateOf(startWithDepth) }
+    var isRotated90 by remember { mutableStateOf(false) }
+    var isImmersiveFull by remember { mutableStateOf(false) }
+    var savedBannerVisible by remember { mutableStateOf(false) }
 
-    // Restore original screen orientation when closing the fullscreen viewer
+    val rotatedStereogram = remember(stereogramBitmap) { stereogramBitmap.rotateBitmap90() }
+    val rotatedDepth = remember(depthBitmap) { depthBitmap?.rotateBitmap90() }
+
     DisposableEffect(activity) {
-        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        val prevOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         onDispose {
-            activity?.requestedOrientation = originalOrientation
+            activity?.requestedOrientation = prevOrientation
         }
     }
 
-    LaunchedEffect(savedFeedbackVisible) {
-        if (savedFeedbackVisible) {
+    LaunchedEffect(savedBannerVisible) {
+        if (savedBannerVisible) {
             delay(2500)
-            savedFeedbackVisible = false
+            savedBannerVisible = false
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = true
-        )
-    ) {
-        BackHandler {
-            if (isFullBleedZoomed) {
-                isFullBleedZoomed = false
-                scale = 1f
-                offset = Offset.Zero
-                controlsVisible = true
-            } else {
-                onDismiss()
+    BackHandler {
+        if (isImmersiveFull) {
+            isImmersiveFull = false
+            isRotated90 = false
+            scale = 1f
+            offset = Offset.Zero
+        } else {
+            onDismiss()
+        }
+    }
+
+    val baseBitmap = if (showDepthOverlay && depthBitmap != null) {
+        if (isRotated90) rotatedDepth ?: depthBitmap else depthBitmap
+    } else {
+        if (isRotated90) rotatedStereogram else stereogramBitmap
+    }
+
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("fullscreen_viewer_scaffold"),
+        containerColor = Color(0xFF05070B),
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            if (!isImmersiveFull) {
+                Surface(
+                    color = Color(0xFF0F131F),
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // 90-degree in-place rotation button (fills vertical screen without needing auto-rotate)
+                            FilledTonalIconButton(
+                                onClick = {
+                                    isRotated90 = !isRotated90
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                },
+                                modifier = Modifier.testTag("btn_rotate_image_90")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Rotate90DegreesCcw,
+                                    contentDescription = "چرخش ۹۰ درجه تصویر"
+                                )
+                            }
+
+                            // 4-arrows Fullscreen button: rotates & fills the entire screen cleanly!
+                            FilledTonalIconButton(
+                                onClick = {
+                                    isImmersiveFull = true
+                                    if (stereogramBitmap.width > stereogramBitmap.height) {
+                                        isRotated90 = true
+                                    }
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                },
+                                modifier = Modifier.testTag("btn_reset_zoom")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ZoomOutMap,
+                                    contentDescription = "تمام‌صفحه کامل"
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.testTag("btn_close_fullscreen")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "بستن نمای تصویر",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        bottomBar = {
+            if (!isImmersiveFull) {
+                Surface(
+                    color = Color(0xFF0F131F),
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Row 1: Zoom & Orientation quick controls
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        scale = (scale + 0.35f).coerceAtMost(4.5f)
+                                    },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .testTag("btn_zoom_in")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ZoomIn,
+                                        contentDescription = "بزرگ‌نمایی"
+                                    )
+                                }
+
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        val next = (scale - 0.35f).coerceAtLeast(1f)
+                                        scale = next
+                                        if (next <= 1.05f) offset = Offset.Zero
+                                    },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .testTag("btn_zoom_out")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ZoomOut,
+                                        contentDescription = "کوچک‌نمایی"
+                                    )
+                                }
+
+                                if (scale > 1.05f || offset != Offset.Zero) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            scale = 1f
+                                            offset = Offset.Zero
+                                        },
+                                        modifier = Modifier.height(38.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("${(scale * 100).roundToInt()}٪")
+                                    }
+                                } else {
+                                    Text(
+                                        text = "بزرگ‌نمایی: ۱۰۰٪",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isRotated90 = !isRotated90
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                },
+                                modifier = Modifier
+                                    .height(38.dp)
+                                    .testTag("btn_bottom_rotate")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Rotate90DegreesCcw,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (isRotated90) "حالت افقی" else "چرخش ۹۰°")
+                            }
+                        }
+
+                        // Row 2: Primary Action Buttons (Discover Hidden Shape, Save, Download, Share)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (depthBitmap != null) {
+                                Button(
+                                    onClick = { showDepthOverlay = !showDepthOverlay },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (showDepthOverlay) {
+                                            MaterialTheme.colorScheme.secondary
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        contentColor = if (showDepthOverlay) {
+                                            MaterialTheme.colorScheme.onSecondary
+                                        } else {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        }
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1.3f)
+                                        .testTag("btn_toggle_fullscreen_depth")
+                                ) {
+                                    Icon(
+                                        imageVector = if (showDepthOverlay) {
+                                            Icons.Default.VisibilityOff
+                                        } else {
+                                            Icons.Default.Visibility
+                                        },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (showDepthOverlay) "نمایش استریوگرام" else "کشف شکل پنهان",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    onSaveToGallery()
+                                    savedBannerVisible = true
+                                },
+                                modifier = Modifier.testTag("btn_fullscreen_save")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SaveAlt,
+                                    contentDescription = "ذخیره در گالری",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ذخیره", fontWeight = FontWeight.Bold)
+                            }
+
+                            if (onDownloadFile != null) {
+                                FilledTonalIconButton(
+                                    onClick = onDownloadFile,
+                                    modifier = Modifier.testTag("btn_fullscreen_download")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = "دانلود PNG"
+                                    )
+                                }
+                            }
+
+                            FilledTonalIconButton(
+                                onClick = onShare,
+                                modifier = Modifier.testTag("btn_fullscreen_share")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "اشتراک‌گذاری"
+                                )
+                            }
+                        }
+
+                        // Row 3: Concise viewing instruction
+                        Text(
+                            text = "روش دیدن: به دو نقطهٔ سفید بالای تصویر نگاه کنید و نگاهتان را به پشت صفحه معطوف کنید تا دو نقطه به سه نقطه تبدیل شده و شکل سه‌بعدی ظاهر شود.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.78f)
+                        )
+                    }
+                }
             }
         }
-
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(innerPadding)
+                .background(Color(0xFF05070B)),
+            contentAlignment = Alignment.Center
         ) {
-            val activeBitmap = if (showDepthOverlay && depthBitmap != null) {
-                depthBitmap
-            } else {
-                stereogramBitmap
-            }
-
-            // Main Interactive Image Canvas
             Image(
-                bitmap = activeBitmap.asImageBitmap(),
+                bitmap = baseBitmap.asImageBitmap(),
                 contentDescription = title,
-                contentScale = if (isFullBleedZoomed) ContentScale.Crop else ContentScale.Fit,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
+                    .pointerInput(isImmersiveFull) {
                         detectTapGestures(
                             onTap = {
-                                controlsVisible = !controlsVisible
+                                if (isImmersiveFull) {
+                                    isImmersiveFull = false
+                                }
                             },
                             onDoubleTap = {
-                                isFullBleedZoomed = !isFullBleedZoomed
-                                scale = if (isFullBleedZoomed) 1.35f else 1f
-                                offset = Offset.Zero
+                                if (scale > 1.05f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = 2.0f
+                                }
                             }
                         )
                     }
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
-                            val newScale = (scale * zoom).coerceIn(0.8f, 4.5f)
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
                             scale = newScale
-                            offset = if (newScale > 1.02f || isFullBleedZoomed) {
+                            offset = if (newScale > 1.02f) {
                                 Offset(
-                                    x = (offset.x + pan.x).coerceIn(-1000f, 1000f),
-                                    y = (offset.y + pan.y).coerceIn(-1000f, 1000f)
+                                    x = (offset.x + pan.x).coerceIn(-1200f, 1200f),
+                                    y = (offset.y + pan.y).coerceIn(-1200f, 1200f)
                                 )
                             } else {
                                 Offset.Zero
@@ -186,132 +482,64 @@ fun FullscreenStereogramDialog(
                     )
             )
 
-            // Floating mini button when controls are hidden in immersive mode
+            // Floating exit button when in true full-bleed immersive mode
             AnimatedVisibility(
-                visible = !controlsVisible,
+                visible = isImmersiveFull,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(12.dp)
-            ) {
-                FilledTonalIconButton(
-                    onClick = {
-                        controlsVisible = true
-                        isFullBleedZoomed = false
-                        scale = 1f
-                        offset = Offset.Zero
-                    },
-                    modifier = Modifier.testTag("btn_exit_immersive")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FullscreenExit,
-                        contentDescription = "نمایش منو و بازگشت به اندازه عادی"
-                    )
-                }
-            }
-
-            // Top Bar
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter)
+                    .padding(16.dp)
             ) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.82f),
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color.Black.copy(alpha = 0.75f),
+                    shape = CircleShape,
+                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        IconButton(
+                            onClick = {
+                                isRotated90 = !isRotated90
+                                scale = 1f
+                                offset = Offset.Zero
+                            }
                         ) {
-                            // Rotate Screen (Landscape / Portrait) for comfortable full-width Magic Eye viewing
-                            FilledTonalIconButton(
-                                onClick = {
-                                    isLandscapeLocked = !isLandscapeLocked
-                                    activity?.requestedOrientation = if (isLandscapeLocked) {
-                                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                    } else {
-                                        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                    }
-                                    scale = 1f
-                                    offset = Offset.Zero
-                                },
-                                modifier = Modifier.testTag("btn_rotate_screen")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ScreenRotation,
-                                    contentDescription = "چرخش افقی/عمودی صفحه"
-                                )
-                            }
-
-                            // 4-arrows icon: Toggles Full-Screen Fill / Immersive Zoom
-                            FilledTonalIconButton(
-                                onClick = {
-                                    isFullBleedZoomed = !isFullBleedZoomed
-                                    if (isFullBleedZoomed) {
-                                        scale = 1.25f
-                                        offset = Offset.Zero
-                                    } else {
-                                        scale = 1f
-                                        offset = Offset.Zero
-                                    }
-                                },
-                                modifier = Modifier.testTag("btn_reset_zoom")
-                            ) {
-                                Icon(
-                                    imageVector = if (isFullBleedZoomed) {
-                                        Icons.Default.ZoomInMap
-                                    } else {
-                                        Icons.Default.ZoomOutMap
-                                    },
-                                    contentDescription = if (isFullBleedZoomed) {
-                                        "بازگشت به اندازهٔ استاندارد"
-                                    } else {
-                                        "پر کردن کل صفحه"
-                                    }
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.testTag("btn_close_fullscreen")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "بستن نمای تمام‌صفحه",
-                                    tint = Color.White
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Rotate90DegreesCcw,
+                                contentDescription = "چرخش تصویر",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                isImmersiveFull = false
+                                isRotated90 = false
+                                scale = 1f
+                                offset = Offset.Zero
+                            },
+                            modifier = Modifier.testTag("btn_exit_immersive")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomInMap,
+                                contentDescription = "خروج از حالت تمام‌صفحه",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
             }
 
-            // Toast notification banner inside Fullscreen when Saved
+            // Saved confirmation banner
             AnimatedVisibility(
-                visible = savedFeedbackVisible,
+                visible = savedBannerVisible,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 70.dp)
+                    .padding(top = 16.dp)
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary,
@@ -324,99 +552,6 @@ fun FullscreenStereogramDialog(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
                     )
-                }
-            }
-
-            // Bottom Action Bar + Compact Viewing Tip
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.88f),
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Action Buttons placed FIRST so they are always prominent and never cut off
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (depthBitmap != null) {
-                                Button(
-                                    onClick = { showDepthOverlay = !showDepthOverlay },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (showDepthOverlay) {
-                                            MaterialTheme.colorScheme.secondary
-                                        } else {
-                                            MaterialTheme.colorScheme.primary
-                                        }
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1.3f)
-                                        .testTag("btn_toggle_fullscreen_depth")
-                                ) {
-                                    Icon(
-                                        imageVector = if (showDepthOverlay) {
-                                            Icons.Default.VisibilityOff
-                                        } else {
-                                            Icons.Default.Visibility
-                                        },
-                                        contentDescription = "تغییر نمای نقشه عمق",
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (showDepthOverlay) "نمایش استریوگرام" else "کشف شکل پنهان",
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            FilledTonalButton(
-                                onClick = {
-                                    onSaveToGallery()
-                                    savedFeedbackVisible = true
-                                },
-                                modifier = Modifier.testTag("btn_fullscreen_save")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SaveAlt,
-                                    contentDescription = "ذخیره در گالری",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("ذخیره")
-                            }
-
-                            FilledTonalIconButton(
-                                onClick = onShare,
-                                modifier = Modifier.testTag("btn_fullscreen_share")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "اشتراک‌گذاری"
-                                )
-                            }
-                        }
-
-                        // Compact viewing guide below the buttons
-                        Text(
-                            text = "روش دیدن: به دو نقطهٔ سفید بالای تصویر نگاه کنید و نگاهتان را به پشت صفحه معطوف کنید تا دو نقطه به سه نقطه تبدیل شده و شکل سه‌بعدی ظاهر شود. (برای مخفی‌شدن این کادر، یک بار روی عکس بزنید)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.82f),
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
                 }
             }
         }

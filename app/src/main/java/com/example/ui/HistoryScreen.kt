@@ -29,13 +29,15 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +61,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.StereogramHistoryEntity
-import com.example.ui.components.FullscreenStereogramDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -71,6 +72,7 @@ import java.util.Locale
 fun HistoryScreen(
     historyItems: List<StereogramHistoryEntity>,
     onBackToStudio: () -> Unit,
+    onOpenInFullscreen: (String, Bitmap, Bitmap?) -> Unit,
     onLoadIntoStudio: (StereogramHistoryEntity) -> Unit,
     onSaveToGallery: (Bitmap) -> Unit,
     onShareBitmap: (Bitmap, String) -> Unit,
@@ -78,10 +80,6 @@ fun HistoryScreen(
     modifier: Modifier = Modifier
 ) {
     BackHandler { onBackToStudio() }
-
-    var selectedForFullscreen by remember {
-        mutableStateOf<Triple<StereogramHistoryEntity, Bitmap, Bitmap?>?>(null)
-    }
 
     if (historyItems.isEmpty()) {
         Box(
@@ -153,7 +151,7 @@ fun HistoryScreen(
                 HistoryItemCard(
                     item = item,
                     onOpenFullscreen = { stereoBmp, depthBmp ->
-                        selectedForFullscreen = Triple(item, stereoBmp, depthBmp)
+                        onOpenInFullscreen(item.title, stereoBmp, depthBmp)
                     },
                     onLoadIntoStudio = { onLoadIntoStudio(item) },
                     onSaveToGallery = onSaveToGallery,
@@ -162,17 +160,6 @@ fun HistoryScreen(
                 )
             }
         }
-    }
-
-    selectedForFullscreen?.let { (item, stereoBmp, depthBmp) ->
-        FullscreenStereogramDialog(
-            title = item.title,
-            stereogramBitmap = stereoBmp,
-            depthBitmap = depthBmp,
-            onDismiss = { selectedForFullscreen = null },
-            onSaveToGallery = { onSaveToGallery(stereoBmp) },
-            onShare = { onShareBitmap(stereoBmp, item.title) }
-        )
     }
 }
 
@@ -187,6 +174,7 @@ private fun HistoryItemCard(
 ) {
     var stereoBitmap by remember(item.stereogramFilePath) { mutableStateOf<Bitmap?>(null) }
     var depthBitmap by remember(item.depthFilePath) { mutableStateOf<Bitmap?>(null) }
+    var showDepthInCard by remember { mutableStateOf(false) }
 
     LaunchedEffect(item.stereogramFilePath, item.depthFilePath) {
         withContext(Dispatchers.IO) {
@@ -203,6 +191,8 @@ private fun HistoryItemCard(
         SimpleDateFormat("yyyy/MM/dd - HH:mm", Locale.getDefault()).format(Date(item.createdAt))
     }
 
+    val aspect = (item.width.toFloat() / item.height.toFloat()).coerceIn(1.1f, 2.0f)
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
@@ -212,56 +202,7 @@ private fun HistoryItemCard(
             .testTag("history_card_${item.id}")
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.5f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black)
-                    .clickable {
-                        stereoBitmap?.let { onOpenFullscreen(it, depthBitmap) }
-                    }
-            ) {
-                stereoBitmap?.let { bmp ->
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                // Small depth thumbnail badge in bottom-left corner
-                depthBitmap?.let { dBmp ->
-                    Image(
-                        bitmap = dBmp.asImageBitmap(),
-                        contentDescription = "نقشهٔ عمق",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                            .size(width = 64.dp, height = 44.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                    )
-                }
-
-                FilledTonalIconButton(
-                    onClick = { stereoBitmap?.let { onOpenFullscreen(it, depthBitmap) } },
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp)
-                        .testTag("btn_history_fullscreen_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Fullscreen,
-                        contentDescription = "نمایش تمام‌صفحه"
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
+            // Card Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -296,6 +237,68 @@ private fun HistoryItemCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Clean Image Box with ContentScale.Fit (never crops the stereogram!)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(aspect)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                    .clickable {
+                        stereoBitmap?.let { onOpenFullscreen(it, depthBitmap) }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                val displayed = if (showDepthInCard && depthBitmap != null) depthBitmap else stereoBitmap
+                displayed?.let { bmp ->
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Toggle chip + Fullscreen button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = showDepthInCard,
+                    onClick = { showDepthInCard = !showDepthInCard },
+                    label = { Text(if (showDepthInCard) "نمایش استریوگرام" else "کشف شکل پنهان") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+
+                OutlinedButton(
+                    onClick = { stereoBitmap?.let { onOpenFullscreen(it, depthBitmap) } },
+                    modifier = Modifier.testTag("btn_history_fullscreen_${item.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ZoomOutMap,
+                        contentDescription = "نمایش تمام‌صفحه",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("تمام‌صفحه")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Bottom Actions: Load in Studio, Save to Gallery, Share
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -312,7 +315,7 @@ private fun HistoryItemCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("بارگذاری")
+                    Text("ویرایش در استودیو")
                 }
 
                 FilledTonalIconButton(

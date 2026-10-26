@@ -30,6 +30,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class FullscreenViewerData(
+    val title: String,
+    val stereogramBitmap: Bitmap,
+    val depthBitmap: Bitmap?,
+    val startWithDepth: Boolean = false
+)
+
+enum class StudioPreviewMode {
+    STEREOGRAM,
+    DEPTH_MAP,
+    SPLIT_COMPARE
+}
+
 data class StereogramUiState(
     val config: StereogramConfig = StereogramConfig(),
     val stereogramBitmap: Bitmap? = null,
@@ -40,7 +53,8 @@ data class StereogramUiState(
     val brushDepth: Float = 1f,
     val brushSizeRatio: Float = 0.06f,
     val isGenerating: Boolean = false,
-    val isPeekingDepth: Boolean = false,
+    val previewMode: StudioPreviewMode = StudioPreviewMode.STEREOGRAM,
+    val fullscreenData: FullscreenViewerData? = null,
     val isDarkTheme: Boolean = true,
     val statusMessage: String? = null
 )
@@ -148,8 +162,45 @@ class StereogramViewModel(
         refreshDepthPreview()
     }
 
-    fun togglePeekDepth() {
-        _uiState.update { it.copy(isPeekingDepth = !it.isPeekingDepth) }
+    fun setPreviewMode(mode: StudioPreviewMode) {
+        _uiState.update { it.copy(previewMode = mode) }
+    }
+
+    fun openCurrentInFullscreen() {
+        val state = _uiState.value
+        val stereo = state.stereogramBitmap ?: return
+        val title = if (state.config.shapeType == ShapeType.TEXT) {
+            "متن: ${state.config.text}"
+        } else {
+            state.config.shapeType.labelFa
+        }
+        _uiState.update {
+            it.copy(
+                fullscreenData = FullscreenViewerData(
+                    title = title,
+                    stereogramBitmap = stereo,
+                    depthBitmap = state.depthPreviewBitmap,
+                    startWithDepth = state.previewMode == StudioPreviewMode.DEPTH_MAP
+                )
+            )
+        }
+    }
+
+    fun openCustomInFullscreen(title: String, stereogramBitmap: Bitmap, depthBitmap: Bitmap?) {
+        _uiState.update {
+            it.copy(
+                fullscreenData = FullscreenViewerData(
+                    title = title,
+                    stereogramBitmap = stereogramBitmap,
+                    depthBitmap = depthBitmap,
+                    startWithDepth = false
+                )
+            )
+        }
+    }
+
+    fun closeFullscreen() {
+        _uiState.update { it.copy(fullscreenData = null) }
     }
 
     fun toggleTheme() {
@@ -214,7 +265,7 @@ class StereogramViewModel(
     fun generateStereogram(saveToHistoryAutomatically: Boolean = true) {
         generateJob?.cancel()
         val state = _uiState.value
-        _uiState.update { it.copy(isGenerating = true, isPeekingDepth = false) }
+        _uiState.update { it.copy(isGenerating = true, previewMode = StudioPreviewMode.STEREOGRAM) }
 
         generateJob = viewModelScope.launch(Dispatchers.Default) {
             val result = StereogramEngine.generate(
@@ -277,7 +328,9 @@ class StereogramViewModel(
     }
 
     fun exportCurrentPngToUri(uri: Uri) {
-        val stereo = _uiState.value.stereogramBitmap ?: return
+        val stereo = _uiState.value.fullscreenData?.stereogramBitmap
+            ?: _uiState.value.stereogramBitmap
+            ?: return
         viewModelScope.launch {
             val result = repository.writeBitmapToUri(stereo, uri)
             _uiState.update {
@@ -345,6 +398,7 @@ class StereogramViewModel(
                     config = restoredConfig,
                     stereogramBitmap = stereoBmp ?: it.stereogramBitmap,
                     depthPreviewBitmap = depthBmp ?: it.depthPreviewBitmap,
+                    fullscreenData = null,
                     statusMessage = "تنظیمات و تصویر «${item.title}» در استودیو بارگذاری شد"
                 )
             }

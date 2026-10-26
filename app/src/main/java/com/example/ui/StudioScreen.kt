@@ -25,8 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Palette
@@ -35,7 +35,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -78,7 +78,6 @@ import com.example.model.DepthStroke
 import com.example.model.PatternType
 import com.example.model.ShapeType
 import com.example.ui.components.DepthCanvasEditor
-import com.example.ui.components.FullscreenStereogramDialog
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -107,11 +106,11 @@ fun StudioScreen(
     onDownloadFileClick: () -> Unit,
     onShareClick: () -> Unit,
     onSaveHistoryClick: () -> Unit,
-    onTogglePeekDepth: () -> Unit,
+    onPreviewModeChanged: (StudioPreviewMode) -> Unit,
+    onOpenFullscreenClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val config = uiState.config
-    var showFullscreen by remember { mutableStateOf(false) }
     var shapeDropdownExpanded by remember { mutableStateOf(false) }
     var patternDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -123,14 +122,13 @@ fun StudioScreen(
             .testTag("studio_screen"),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Subtitle banner
         Text(
             text = stringResource(R.string.header_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // 1. Output Canvas Card (#cv + #dprev)
+        // 1. Clean, Uncluttered Output Image Card (#cv + #dprev)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(18.dp),
@@ -151,12 +149,16 @@ fun StudioScreen(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Header row with title and Fullscreen 4-arrows button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Image,
                             contentDescription = null,
@@ -164,110 +166,178 @@ fun StudioScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (uiState.isPeekingDepth) "پیش‌نمایش نقشهٔ عمق (سفید = نزدیک)" else "تصویر سه‌بعدی (Magic Eye)",
+                            text = "${config.width}×${config.height} • ${
+                                if (config.shapeType == ShapeType.TEXT) "متن: ${config.text}" else config.shapeType.labelFa
+                            }",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilledTonalIconButton(
-                            onClick = onTogglePeekDepth,
-                            modifier = Modifier.testTag("btn_peek_depth")
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.isPeekingDepth) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "تغییر نمای نقشه عمق"
-                            )
-                        }
-                        FilledTonalIconButton(
-                            onClick = { if (uiState.stereogramBitmap != null) showFullscreen = true },
-                            modifier = Modifier.testTag("btn_open_fullscreen")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Fullscreen,
-                                contentDescription = stringResource(R.string.btn_fullscreen)
-                            )
-                        }
+                    FilledTonalIconButton(
+                        onClick = onOpenFullscreenClick,
+                        modifier = Modifier.testTag("btn_open_fullscreen")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomOutMap,
+                            contentDescription = stringResource(R.string.btn_fullscreen)
+                        )
                     }
                 }
 
-                val aspect = (config.width.toFloat() / config.height.toFloat()).coerceIn(0.8f, 2.5f)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(aspect)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-                        .clickable { if (uiState.stereogramBitmap != null) showFullscreen = true }
-                        .testTag("stereogram_output_canvas"),
-                    contentAlignment = Alignment.Center
+                // Clear Segmented Mode Tabs: Stereogram vs Hidden Shape vs Compare
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val displayedBmp = if (uiState.isPeekingDepth) {
-                        uiState.depthPreviewBitmap ?: uiState.stereogramBitmap
-                    } else {
-                        uiState.stereogramBitmap
-                    }
+                    FilterChip(
+                        selected = uiState.previewMode == StudioPreviewMode.STEREOGRAM,
+                        onClick = { onPreviewModeChanged(StudioPreviewMode.STEREOGRAM) },
+                        label = { Text("استریوگرام") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.testTag("tab_mode_stereogram")
+                    )
+                    FilterChip(
+                        selected = uiState.previewMode == StudioPreviewMode.DEPTH_MAP,
+                        onClick = { onPreviewModeChanged(StudioPreviewMode.DEPTH_MAP) },
+                        label = { Text("کشف شکل پنهان") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.testTag("btn_peek_depth")
+                    )
+                    FilterChip(
+                        selected = uiState.previewMode == StudioPreviewMode.SPLIT_COMPARE,
+                        onClick = { onPreviewModeChanged(StudioPreviewMode.SPLIT_COMPARE) },
+                        label = { Text("مقایسه") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Compare,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.testTag("tab_mode_compare")
+                    )
+                }
 
-                    if (displayedBmp != null) {
-                        Image(
-                            bitmap = displayedBmp.asImageBitmap(),
-                            contentDescription = "خروجی استریوگرام",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                val aspect = (config.width.toFloat() / config.height.toFloat()).coerceIn(0.85f, 2.2f)
 
-                    if (uiState.isGenerating) {
-                        Surface(
-                            color = Color.Black.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                if (uiState.previewMode == StudioPreviewMode.SPLIT_COMPARE) {
+                    // Clean Split Compare View: Stereogram on top, Depth Map right below it without any overlap
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        uiState.stereogramBitmap?.let { stereoBmp ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(aspect)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black)
+                                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                                    .clickable { onOpenFullscreenClick() }
                             ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    strokeWidth = 2.5.dp
+                                Image(
+                                    bitmap = stereoBmp.asImageBitmap(),
+                                    contentDescription = "تصویر استریوگرام",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text("در حال ساخت تصویر سه‌بعدی...", color = Color.White)
+                            }
+                        }
+                        uiState.depthPreviewBitmap?.let { depthBmp ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(aspect)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black)
+                                    .border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(12.dp))
+                                    .clickable { onOpenFullscreenClick() }
+                            ) {
+                                Image(
+                                    bitmap = depthBmp.asImageBitmap(),
+                                    contentDescription = "نقشهٔ عمق (شکل پنهان)",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
                     }
+                } else {
+                    // Single clean image viewport (either Stereogram or Depth Map) with zero overlapping clutter
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(aspect)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                            .clickable { onOpenFullscreenClick() }
+                            .testTag("stereogram_output_canvas"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val displayedBmp = if (uiState.previewMode == StudioPreviewMode.DEPTH_MAP) {
+                            uiState.depthPreviewBitmap ?: uiState.stereogramBitmap
+                        } else {
+                            uiState.stereogramBitmap
+                        }
 
-                    // Mini depth preview corner badge (#dprev)
-                    if (!uiState.isPeekingDepth && uiState.depthPreviewBitmap != null) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.75f))
-                                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                                .clickable { onTogglePeekDepth() }
-                                .padding(4.dp)
-                                .testTag("mini_depth_preview")
-                        ) {
+                        if (displayedBmp != null) {
                             Image(
-                                bitmap = uiState.depthPreviewBitmap.asImageBitmap(),
-                                contentDescription = "پیش‌نمایش نقشهٔ عمق",
+                                bitmap = displayedBmp.asImageBitmap(),
+                                contentDescription = "خروجی تصویر",
                                 contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(width = 76.dp, height = 50.dp)
+                                modifier = Modifier.fillMaxSize()
                             )
-                            Text(
-                                text = "نقشهٔ عمق",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color.White
-                            )
+                        }
+
+                        if (uiState.isGenerating) {
+                            Surface(
+                                color = Color.Black.copy(alpha = 0.7f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.5.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text("در حال ساخت تصویر سه‌بعدی...", color = Color.White)
+                                }
+                            }
                         }
                     }
                 }
 
-                // Quick Action Bar right under the canvas
+                // Dedicated Fullscreen & Zoom Button right below the image
+                OutlinedButton(
+                    onClick = onOpenFullscreenClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("btn_open_fullscreen_bar")
+                ) {
+                    Icon(imageVector = Icons.Default.ZoomOutMap, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("نمایش تمام‌صفحه، بزرگ‌نمایی و چرخش ۹۰ درجه")
+                }
+
+                // Action Row 1: Generate & Save to Gallery
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -279,7 +349,7 @@ fun StudioScreen(
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier
-                            .weight(1.2f)
+                            .weight(1f)
                             .testTag("btn_generate_main")
                     ) {
                         Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
@@ -297,28 +367,47 @@ fun StudioScreen(
                             .testTag("btn_save_gallery")
                     ) {
                         Icon(imageVector = Icons.Default.SaveAlt, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.btn_save_gallery))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.btn_save_gallery),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
+                }
 
-                    FilledTonalIconButton(
+                // Action Row 2: Download PNG & Share
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
                         onClick = onDownloadFileClick,
-                        modifier = Modifier.testTag("btn_download_png")
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("btn_download_png")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Download,
-                            contentDescription = stringResource(R.string.btn_download_file)
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.btn_download_file))
                     }
 
-                    FilledTonalIconButton(
+                    OutlinedButton(
                         onClick = onShareClick,
-                        modifier = Modifier.testTag("btn_share_stereogram")
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("btn_share_stereogram")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,
-                            contentDescription = stringResource(R.string.btn_share)
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.btn_share))
                     }
                 }
             }
@@ -350,7 +439,6 @@ fun StudioScreen(
                     )
                 }
 
-                // Exposed Dropdown + Quick Filter Chips for Shapes
                 ExposedDropdownMenuBox(
                     expanded = shapeDropdownExpanded,
                     onExpandedChange = { shapeDropdownExpanded = it }
@@ -394,7 +482,6 @@ fun StudioScreen(
                     }
                 }
 
-                // Quick selectable chips for instant access to shapes
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -409,7 +496,6 @@ fun StudioScreen(
                     }
                 }
 
-                // Conditional input for TEXT
                 AnimatedVisibility(visible = config.shapeType == ShapeType.TEXT) {
                     OutlinedTextField(
                         value = config.text,
@@ -423,7 +509,6 @@ fun StudioScreen(
                     )
                 }
 
-                // Conditional input for Freehand Depth Drawing
                 AnimatedVisibility(visible = config.shapeType == ShapeType.DRAW) {
                     DepthCanvasEditor(
                         strokes = uiState.strokes,
@@ -438,7 +523,6 @@ fun StudioScreen(
                     )
                 }
 
-                // Conditional input for UPLOAD Depth Map
                 AnimatedVisibility(visible = config.shapeType == ShapeType.UPLOAD) {
                     OutlinedButton(
                         onClick = onPickDepthImage,
@@ -458,20 +542,29 @@ fun StudioScreen(
                     }
                 }
 
-                // Dedicated Depth Map Preview Row (#dprev)
+                // Clean Depth Map Preview Row (#dprev) - Tapping switches preview or opens fullscreen
                 uiState.depthPreviewBitmap?.let { depthBmp ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            .clickable {
+                                onPreviewModeChanged(
+                                    if (uiState.previewMode == StudioPreviewMode.DEPTH_MAP) {
+                                        StudioPreviewMode.STEREOGRAM
+                                    } else {
+                                        StudioPreviewMode.DEPTH_MAP
+                                    }
+                                )
+                            }
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "پیش‌نمایش نقشهٔ عمق فعلی",
+                                text = "پیش‌نمایش نقشهٔ عمق فعلی (برای بزرگ‌نمایی لمس کنید)",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold
                             )
@@ -591,7 +684,6 @@ fun StudioScreen(
                     }
                 }
 
-                // Invert depth checkbox (#inv)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -612,7 +704,6 @@ fun StudioScreen(
                     )
                 }
 
-                // Guide dots checkbox
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -665,7 +756,7 @@ fun StudioScreen(
                     label = stringResource(R.string.param_width),
                     value = config.width,
                     valueRange = 400f..1600f,
-                    steps = 23, // (1600 - 400) / 50 - 1
+                    steps = 23,
                     onValueChange = { onWidthChanged(it.roundToInt()) },
                     testTag = "slider_width"
                 )
@@ -674,7 +765,7 @@ fun StudioScreen(
                     label = stringResource(R.string.param_height),
                     value = config.height,
                     valueRange = 300f..1200f,
-                    steps = 17, // (1200 - 300) / 50 - 1
+                    steps = 17,
                     onValueChange = { onHeightChanged(it.roundToInt()) },
                     testTag = "slider_height"
                 )
@@ -771,21 +862,6 @@ fun StudioScreen(
                 )
             }
         }
-    }
-
-    if (showFullscreen && uiState.stereogramBitmap != null) {
-        FullscreenStereogramDialog(
-            title = if (config.shapeType == ShapeType.TEXT) {
-                "متن: ${config.text}"
-            } else {
-                config.shapeType.labelFa
-            },
-            stereogramBitmap = uiState.stereogramBitmap,
-            depthBitmap = uiState.depthPreviewBitmap,
-            onDismiss = { showFullscreen = false },
-            onSaveToGallery = onSaveToGalleryClick,
-            onShare = onShareClick
-        )
     }
 }
 
